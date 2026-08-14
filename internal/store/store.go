@@ -141,6 +141,7 @@ type HistoryEntry struct {
 	Total int64     `json:"total"`
 	Delta int64     `json:"delta"`
 	Files int       `json:"files"`
+	Roots []string  `json:"roots,omitempty"`
 }
 
 func (s *Store) historyPath() string { return filepath.Join(s.dir, "history.jsonl") }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -218,13 +219,32 @@ func Scan(args []string) error {
 
 // appendHistory records one scan outcome for the web timeline.
 func appendHistory(st *store.Store, prev, snap *snapshot.Snapshot) error {
-	e := store.HistoryEntry{Time: snap.Time, Total: snap.Total()}
+	e := store.HistoryEntry{Time: snap.Time, Total: snap.Total(), Roots: snap.Roots}
 	if prev != nil {
 		sum := snapshot.Summarize(snapshot.Diff(prev, snap))
 		e.Delta = sum.Delta
 		e.Files = sum.Added + sum.Removed + sum.Changed
 	}
 	return st.AppendHistory(e)
+}
+
+// sameRoots reports whether two snapshots cover exactly the same roots,
+// regardless of argument order.
+func sameRoots(a, b *snapshot.Snapshot) bool {
+	if len(a.Roots) != len(b.Roots) {
+		return false
+	}
+	aa := slices.Clone(a.Roots)
+	bb := slices.Clone(b.Roots)
+	slices.Sort(aa)
+	slices.Sort(bb)
+	return slices.Equal(aa, bb)
+}
+
+// diffErr explains why two snapshots cannot be compared.
+func diffErr(a, b *snapshot.Snapshot) error {
+	return fmt.Errorf("snapshots cover different roots (%s vs %s) — diff would be meaningless; run 'otsn list' and pick a matching pair with --since",
+		strings.Join(a.Roots, ","), strings.Join(b.Roots, ","))
 }
 
 // ---- watch ---------------------------------------------------------------
@@ -441,6 +461,9 @@ func pickSnapshot(snaps []store.Snap, since string) (store.Snap, error) {
 }
 
 func renderReport(from, to *snapshot.Snapshot, depth int, minBytes int64, topN int, jsonOut bool) error {
+	if !sameRoots(from, to) {
+		return diffErr(from, to)
+	}
 	changes := snapshot.Diff(from, to)
 	sum := snapshot.Summarize(changes)
 	var groups []snapshot.Group
@@ -552,6 +575,11 @@ func reportAll(st *store.Store, snaps []store.Snap, jsonOut bool) error {
 		b, err := st.Load(snaps[i+1])
 		if err != nil {
 			return err
+		}
+		if !sameRoots(a, b) {
+			ui.Warnf("skipping interval %s → %s: snapshots cover different roots",
+				snaps[i].Time.Format("01-02 15:04"), snaps[i+1].Time.Format("01-02 15:04"))
+			continue
 		}
 		sum := snapshot.Summarize(snapshot.Diff(a, b))
 		rows = append(rows, row{snaps[i].Time, snaps[i+1].Time, sum.Delta, sum.Added + sum.Removed + sum.Changed})
@@ -681,10 +709,12 @@ func List(args []string) error {
 	}
 	if *jsonOut {
 		out := make([]map[string]any, 0, len(snaps))
+		rootsByTime := historyRoots(st)
 		for i, s := range snaps {
 			fi, _ := os.Stat(s.Path)
 			out = append(out, map[string]any{
 				"index": i + 1, "time": s.Time.Format(time.RFC3339), "bytes": fi.Size(),
+				"roots": rootsByTime[s.Time.UnixNano()],
 			})
 		}
 		return printJSON(out)
@@ -695,18 +725,42 @@ func List(args []string) error {
 		fmt.Println(ui.Dim("  no snapshots yet — run 'otsn scan' first"))
 		return nil
 	}
+	rootsByTime := historyRoots(st)
 	rows := make([][]string, 0, len(snaps))
 	for i, s := range snaps {
 		fi, _ := os.Stat(s.Path)
+		roots := rootsByTime[s.Time.UnixNano()]
+		label := "—"
+		if len(roots) > 0 {
+			label = clip(ui.Abbrev(strings.Join(roots, " ")), 40)
+		}
 		rows = append(rows, []string{
 			strconv.Itoa(i + 1),
 			s.Time.Local().Format("2006-01-02 15:04:05"),
 			ui.FmtBytes(fi.Size()),
+			label,
 		})
 	}
-	fmt.Print(ui.Table([]string{"idx", "time", "size"}, rows, map[int]bool{0: true, 2: true}))
+	fmt.Print(ui.Table([]string{"idx", "time", "size", "roots"}, rows, map[int]bool{0: true, 2: true}))
 	fmt.Printf("  %s\n", ui.Dim(fmt.Sprintf("archive: %s", st.Dir())))
 	return nil
+}
+
+// historyRoots maps snapshot times to the roots recorded for them, so
+// 'list' can show each snapshot's scope without decoding every file.
+// UnixNano keys keep timezone-laden time.Time values comparable.
+func historyRoots(st *store.Store) map[int64][]string {
+	hist, err := st.History()
+	if err != nil {
+		return nil
+	}
+	out := make(map[int64][]string, len(hist))
+	for _, e := range hist {
+		if _, ok := out[e.Time.UnixNano()]; !ok {
+			out[e.Time.UnixNano()] = e.Roots
+		}
+	}
+	return out
 }
 
 // Prune implements 'otsn prune'.

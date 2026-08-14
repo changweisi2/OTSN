@@ -247,6 +247,10 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if !sameRoots(a, b) {
+			http.Error(w, diffErr(a, b).Error(), http.StatusBadRequest)
+			return
+		}
 		depth := intQuery(r, "depth", 3)
 		n := intQuery(r, "top", 12)
 		min, err := parseSize(r.URL.Query().Get("min"))
