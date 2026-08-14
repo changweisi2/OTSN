@@ -187,6 +187,11 @@ func Scan(args []string) error {
 			"skipped":  snap.Skips,
 			"snapshot": snap.Time.Format(time.RFC3339),
 		}
+		if total, used, err := diskUsage(roots[0]); err == nil {
+			out["disk_total"] = total
+			out["disk_used"] = used
+			out["disk_free"] = total - used
+		}
 		if prev != nil {
 			sum := snapshot.Summarize(snapshot.Diff(prev, snap))
 			out["delta_bytes"] = sum.Delta
@@ -197,23 +202,28 @@ func Scan(args []string) error {
 
 	fmt.Println()
 	fmt.Println(ui.Title("scan complete"))
-	fmt.Printf("  paths    %s\n", strings.Join(roots, ", "))
-	fmt.Printf("  entries  %s\n", ui.FmtInt(int64(len(snap.Entries))))
-	fmt.Printf("  size     %s\n", ui.FmtBytes(snap.Total()))
-	fmt.Printf("  elapsed  %s\n", elapsed.Round(time.Millisecond))
+	fmt.Printf("  paths      %s\n", strings.Join(roots, ", "))
+	if total, used, err := diskUsage(roots[0]); err == nil {
+		fmt.Printf("  disk       %s used of %s (%.1f%%) · %s free\n",
+			ui.FmtBytes(used), ui.FmtBytes(total), float64(used)/float64(total)*100,
+			ui.FmtBytes(total-used))
+	}
+	fmt.Printf("  file size  %s\n", ui.FmtBytes(snap.Total()))
+	fmt.Printf("  entries    %s\n", ui.FmtInt(int64(len(snap.Entries))))
+	fmt.Printf("  elapsed    %s\n", elapsed.Round(time.Millisecond))
 	if snap.Skips > 0 {
-		fmt.Printf("  skipped  %s   (%s)\n", ui.FmtInt(snap.Skips), snap.Errors[0])
+		fmt.Printf("  skipped    %s   (%s)\n", ui.FmtInt(snap.Skips), snap.Errors[0])
 	}
 	if prev != nil {
 		sum := snapshot.Summarize(snapshot.Diff(prev, snap))
-		fmt.Printf("  Δ        %s since %s  (%s files changed)\n",
+		fmt.Printf("  Δ          %s since %s  (%s files changed)\n",
 			signDelta(sum.Delta), prev.Time.Format("2006-01-02 15:04"),
 			ui.FmtInt(int64(sum.Added+sum.Removed+sum.Changed)))
 	}
 	if err := appendHistory(st, prev, snap); err != nil {
 		ui.Warnf("history: %v", err)
 	}
-	fmt.Printf("  stored   %s\n", ui.Dim(st.Dir()))
+	fmt.Printf("  stored     %s\n", ui.Dim(st.Dir()))
 	return nil
 }
 
