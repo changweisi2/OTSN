@@ -2,6 +2,8 @@
 package store
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,4 +132,49 @@ func (s *Store) Prune(keep int) ([]string, error) {
 		removed = append(removed, snaps[i].Path)
 	}
 	return removed, nil
+}
+
+// HistoryEntry is one scan's outcome, recorded so the web timeline can be
+// rendered without decoding every snapshot file.
+type HistoryEntry struct {
+	Time  time.Time `json:"time"`
+	Total int64     `json:"total"`
+	Delta int64     `json:"delta"`
+	Files int       `json:"files"`
+}
+
+func (s *Store) historyPath() string { return filepath.Join(s.dir, "history.jsonl") }
+
+// AppendHistory records one scan outcome.
+func (s *Store) AppendHistory(e HistoryEntry) error {
+	f, err := os.OpenFile(s.historyPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(b, '\n'))
+	return err
+}
+
+// History returns all recorded scan outcomes, oldest first.
+func (s *Store) History() ([]HistoryEntry, error) {
+	b, err := os.ReadFile(s.historyPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []HistoryEntry
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var e HistoryEntry
+		if json.Unmarshal([]byte(line), &e) == nil {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }

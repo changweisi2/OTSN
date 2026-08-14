@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dwatch</title>
+<style>
+  :root {
+    --bg:#0b0e14; --panel:#11151f; --line:#1c2430; --fg:#c9d4e3;
+    --dim:#56657a; --acc:#38bdf8; --up:#f5b04d; --down:#3fd9a0;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    background:var(--bg); color:var(--fg);
+    font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,Menlo,"Cascadia Mono",monospace;
+    padding:36px 40px; max-width:1180px; margin:0 auto;
+  }
+  header { display:flex; align-items:baseline; gap:14px; margin-bottom:26px; }
+  header h1 { font-size:17px; font-weight:700; color:#e8f1fb; letter-spacing:.5px; }
+  header h1 b { color:var(--acc); font-weight:700; }
+  header .roots { color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  header .live { margin-left:auto; color:var(--acc); font-size:11px; }
+  header .live.off { color:var(--dim); }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px; }
+  .card { background:var(--panel); border:1px solid var(--line); padding:16px 18px; }
+  .card .k { color:var(--dim); font-size:10px; letter-spacing:2px; margin-bottom:6px; }
+  .card .v { font-size:22px; color:#e8f1fb; font-weight:700; font-variant-numeric:tabular-nums; }
+  .card .v.up { color:var(--up); } .card .v.down { color:var(--down); }
+  .card .s { color:var(--dim); font-size:11px; margin-top:4px; }
+  section { margin-bottom:26px; }
+  h2 { font-size:11px; color:var(--dim); letter-spacing:2px; margin-bottom:10px; font-weight:600; }
+  h2::before { content:"▸ "; color:var(--acc); }
+  .panel { background:var(--panel); border:1px solid var(--line); padding:18px; }
+  #chart { width:100%; height:170px; display:block; }
+  #chart text { fill:var(--dim); font-size:10px; font-family:inherit; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th { text-align:left; color:var(--dim); font-weight:600; font-size:11px; letter-spacing:1px;
+       padding:6px 10px; border-bottom:1px solid var(--line); }
+  td { padding:6px 10px; border-bottom:1px solid #151b26; white-space:nowrap; }
+  td.path { color:#aebbd0; max-width:230px; overflow:hidden; text-overflow:ellipsis; }
+  td.num { text-align:right; }
+  td.delta.up { color:var(--up); } td.delta.down { color:var(--down); }
+  .bar { display:inline-block; height:8px; background:var(--acc); opacity:.85; vertical-align:middle; }
+  .bar.empty { background:transparent; }
+  .empty { color:var(--dim); padding:10px; }
+  .muted { color:var(--dim); }
+  @media (max-width:900px) { .cards{grid-template-columns:repeat(2,1fr)} .cols{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <h1>◈ <b>dwatch</b></h1>
+  <span class="roots" id="roots">—</span>
+  <span class="live" id="live">●</span>
+</header>
+
+<div class="cards">
+  <div class="card"><div class="k">TOTAL</div><div class="v" id="total">—</div><div class="s" id="scanned">—</div></div>
+  <div class="card"><div class="k">LAST Δ</div><div class="v" id="delta">—</div><div class="s" id="deltaFiles">—</div></div>
+  <div class="card"><div class="k">ENTRIES</div><div class="v" id="entries">—</div><div class="s" id="skips">—</div></div>
+  <div class="card"><div class="k">SNAPSHOTS</div><div class="v" id="snaps">—</div><div class="s">retention 48</div></div>
+</div>
+
+<section>
+  <h2>TIMELINE · TOTAL BYTES</h2>
+  <div class="panel"><svg id="chart" preserveAspectRatio="none"></svg></div>
+</section>
+
+<div class="cols">
+  <section>
+    <h2>TOP · DEPTH 2</h2>
+    <div class="panel"><table id="top"><tbody></tbody></table></div>
+  </section>
+  <section>
+    <h2>LAST CHANGES</h2>
+    <div class="panel"><table id="report"><tbody></tbody></table></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const KB = 1024, MB = 1024*KB, GB = 1024*MB, TB = 1024*GB;
+
+function fmtB(n, sign) {
+  if (n < 0) return "-" + fmtB(-n, false);
+  if (sign && n > 0) n = "+" + n;
+  const abs = Math.abs(n);
+  let v, u;
+  if (abs >= TB)      { v = n/TB; u = "TB"; }
+  else if (abs >= GB) { v = n/GB; u = "GB"; }
+  else if (abs >= MB) { v = n/MB; u = "MB"; }
+  else if (abs >= KB) { v = n/KB; u = "KB"; }
+  else                { v = n;    u = "B"; }
+  return (abs >= KB ? v.toFixed(1) : v) + " " + u;
+}
+function fmtInt(n) { return n.toLocaleString("en-US"); }
+function fmtTime(t) {
+  if (!t) return "never";
+  const d = new Date(t);
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" +
+         String(d.getDate()).padStart(2,"0") + " " +
+         String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function get(p) {
+  const r = await fetch(p);
+  if (!r.ok) throw new Error(p + " " + r.status);
+  return r.json();
+}
+
+async function loadStatus() {
+  const s = await get("/api/status");
+  $("roots").textContent = (s.roots || []).join(" · ") || "—";
+  $("total").textContent = fmtB(s.total || 0);
+  $("scanned").textContent = "scanned " + fmtTime(s.scannedAt);
+  $("entries").textContent = fmtInt(s.entries || 0);
+  $("skips").textContent = "skipped " + fmtInt(s.skips || 0);
+  $("snaps").textContent = fmtInt(s.history || 0);
+  $("live").className = "live" + (s.scannedAt ? "" : " off");
+  return s;
+}
+
+async function loadDelta() {
+  const h = await get("/api/history");
+  const hist = h.history || [];
+  if (!hist.length) { $("delta").textContent = "—"; $("deltaFiles").textContent = "no history yet"; return; }
+  const last = hist[hist.length-1];
+  const d = last.delta || 0;
+  $("delta").textContent = (d >= 0 ? "+" : "-") + fmtB(Math.abs(d));
+  $("delta").className = "v" + (d > 0 ? " up" : d < 0 ? " down" : "");
+  $("deltaFiles").textContent = fmtInt(last.files || 0) + " files · " + fmtTime(last.time);
+  drawChart(hist);
+}
+
+function drawChart(hist) {
+  const svg = $("chart");
+  const W = 1100, H = 170, pad = 40;
+  const vals = hist.map(e => e.total);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = (max - min) || 1;
+  const x = i => pad + i * (W - pad - 10) / Math.max(1, vals.length - 1);
+  const y = v => H - 24 - (v - min) / span * (H - 48);
+  const pts = vals.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" ");
+  let html =
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="#38bdf8" stop-opacity=".35"/>' +
+    '<stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient></defs>' +
+    '<polygon points="' + pad + ',' + (H-24) + ' ' + pts + ' ' + x(vals.length-1) + ',' + (H-24) + '" fill="url(#g)"/>' +
+    '<polyline points="' + pts + '" fill="none" stroke="#38bdf8" stroke-width="1.6"/>' +
+    '<text x="6" y="' + (y(max)-4) + '">' + fmtB(max) + '</text>' +
+    '<text x="6" y="' + (y(min)+12) + '">' + fmtB(min) + '</text>' +
+    '<text x="6" y="' + (H-8) + '">' + fmtTime(hist[0].time) + '</text>' +
+    '<text x="' + (W-150) + '" y="' + (H-8) + '">' + fmtTime(hist[hist.length-1].time) + '</text>';
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = html;
+}
+
+function barCell(frac, maxW) {
+  const w = Math.max(2, Math.round(frac * maxW));
+  return '<span class="bar" style="width:' + w + 'px"></span>';
+}
+
+async function loadTop() {
+  const t = await get("/api/top?depth=2&n=14");
+  const tb = $("top").querySelector("tbody");
+  const groups = t.groups || [];
+  if (!groups.length) { tb.innerHTML = '<tr><td class="empty">no snapshots yet — run dwatch scan</td></tr>'; return; }
+  const maxW = 130;
+  tb.innerHTML = groups.map(g =>
+    '<tr><td class="path" title="' + esc(g.path) + '">' + esc(g.path) + '</td>' +
+    '<td class="num">' + fmtB(g.size) + '</td>' +
+    '<td class="num muted">' + (100*g.share).toFixed(1) + '%</td>' +
+    '<td>' + barCell(g.share, maxW) + '</td></tr>'
+  ).join("");
+}
+
+async function loadReport() {
+  const r = await get("/api/report?depth=3&top=14&min=1MB");
+  const tb = $("report").querySelector("tbody");
+  const groups = r.groups || [];
+  const maxD = Math.max(1, ...groups.map(g => Math.abs(g.delta)));
+  const maxW = 130;
+  if (!groups.length) { tb.innerHTML = '<tr><td class="empty">no significant changes between snapshots</td></tr>'; return; }
+  tb.innerHTML = groups.map(g => {
+    const up = g.delta >= 0;
+    return '<tr><td class="path" title="' + esc(g.path) + '">' + esc(g.path) + '</td>' +
+      '<td class="num muted">' + fmtB(g.before) + '</td>' +
+      '<td class="num muted">' + fmtB(g.after) + '</td>' +
+      '<td class="num delta ' + (up ? "up" : "down") + '">' + (up ? "+" : "") + fmtB(g.delta) + '</td>' +
+      '<td>' + barCell(Math.abs(g.delta)/maxD, maxW) + '</td></tr>';
+  }).join("");
+}
+
+async function refresh() {
+  try {
+    await Promise.all([loadStatus(), loadDelta(), loadTop(), loadReport()]);
+    $("live").textContent = "● live";
+  } catch (e) {
+    $("live").textContent = "● offline";
+    $("live").className = "live off";
+  }
+}
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

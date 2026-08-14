@@ -55,11 +55,30 @@ $ dwatch top --depth 2
 |---|---|
 | `scan` | 扫描并存储快照（默认整盘；`--exclude` 跳过前缀） |
 | `watch` | 周期扫描 + 事件触发；`--interval`、`--alert`（增长告警 MB） |
+| `serve` | 本地 Web 仪表盘（默认 http://127.0.0.1:8787） |
 | `report` | 两次快照 diff：`--since`（序号或时间）、`--depth`、`--min`、`--all`（全部区间） |
 | `top` | 最新快照占用排行：`--depth`、`--n` |
 | `list` / `prune` | 快照归档管理：`--keep` |
 
 所有命令支持 `--json`。`NO_COLOR` 环境变量或非 TTY 下自动禁用颜色。
+
+## Web 仪表盘
+
+`dwatch serve` 在本地起一个极简 Web 界面（深色 + 青蓝风格，无第三方依赖，10 秒自动刷新）：
+
+```console
+$ dwatch serve --interval 5m /home/cat
+◈ dwatch dashboard at http://127.0.0.1:8787 · watching /home/cat · every 5m0s
+```
+
+浏览器打开 http://127.0.0.1:8787：
+
+- **状态卡片**：总量、上次变化 Δ、条目数、快照数；
+- **时间线**：SVG 折线图展示总量随历史快照的变化趋势；
+- **TOP 排行**：当前占用最大的目录（深度可调）；
+- **增长明细**：最近两次快照间的变化表，精确到路径和字节。
+
+页面数据来自 `http://127.0.0.1:8787/api/{status,top,history,report}`（JSON），可自行接入其他工具。监听地址用 `--addr` 调整（默认仅绑定本机 127.0.0.1）。
 
 ## 工作原理
 

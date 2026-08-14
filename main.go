@@ -9,8 +9,6 @@ import (
 	"dwatch/internal/app"
 )
 
-var version = "0.1.0"
-
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "dwatch: "+err.Error())
@@ -36,8 +34,10 @@ func run(args []string) error {
 		return app.List(args[1:])
 	case "prune":
 		return app.Prune(args[1:])
+	case "serve":
+		return app.Serve(args[1:])
 	case "version":
-		fmt.Printf("dwatch %s\n", version)
+		fmt.Printf("dwatch %s\n", app.Version)
 		return nil
 	case "help", "-h", "--help":
 		usage(os.Stdout)
@@ -60,6 +60,7 @@ commands:
   top       largest directories in the latest snapshot
   list      show stored snapshots
   prune     remove old snapshots
+  serve     local web dashboard (http://127.0.0.1:8787)
   version   print version
 
 run 'dwatch <command> -h' for command flags.

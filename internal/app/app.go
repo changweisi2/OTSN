@@ -21,6 +21,10 @@ import (
 	"dwatch/internal/ui"
 )
 
+// Version is the dwatch release version, overridable at build time with
+// -ldflags "-X dwatch/internal/app.Version=...".
+var Version = "0.1.0"
+
 // defaultKeep is how many snapshots the store retains automatically.
 const defaultKeep = 48
 
@@ -205,8 +209,22 @@ func Scan(args []string) error {
 			signDelta(sum.Delta), prev.Time.Format("2006-01-02 15:04"),
 			ui.FmtInt(int64(sum.Added+sum.Removed+sum.Changed)))
 	}
+	if err := appendHistory(st, prev, snap); err != nil {
+		ui.Warnf("history: %v", err)
+	}
 	fmt.Printf("  stored   %s\n", ui.Dim(st.Dir()))
 	return nil
+}
+
+// appendHistory records one scan outcome for the web timeline.
+func appendHistory(st *store.Store, prev, snap *snapshot.Snapshot) error {
+	e := store.HistoryEntry{Time: snap.Time, Total: snap.Total()}
+	if prev != nil {
+		sum := snapshot.Summarize(snapshot.Diff(prev, snap))
+		e.Delta = sum.Delta
+		e.Files = sum.Added + sum.Removed + sum.Changed
+	}
+	return st.AppendHistory(e)
 }
 
 // ---- watch ---------------------------------------------------------------
@@ -378,9 +396,11 @@ func Report(args []string) error {
 		return reportAll(st, snaps, *jsonOut)
 	}
 	to := snaps[len(snaps)-1]
-	from := snaps[len(snaps)-2]
+	var from store.Snap
 	if len(snaps) == 1 {
 		from = snaps[0] // diff against itself: all zeros
+	} else {
+		from = snaps[len(snaps)-2]
 	}
 	if *since != "" {
 		s, err := pickSnapshot(snaps, *since)
