@@ -1,12 +1,16 @@
-//go:build !windows
+//go:build !linux && !darwin && !windows
 
 package app
 
 import "syscall"
 
-// diskUsage returns the total and used bytes of the filesystem containing
-// path, matching what df reports for that mount point.
+// diskUsage falls back to the single filesystem holding path on platforms
+// without a mount-table enumeration here.
 func diskUsage(path string) (total, used int64, err error) {
+	return statfs(path)
+}
+
+func statfs(path string) (total, used int64, err error) {
 	var fs syscall.Statfs_t
 	if err := syscall.Statfs(path, &fs); err != nil {
 		return 0, 0, err
