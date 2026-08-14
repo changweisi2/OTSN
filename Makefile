@@ -1,11 +1,15 @@
 BIN     := otsn
 VERSION := 0.1.0
+PREFIX  ?= /usr/local
 LDFLAGS := -s -w -X otsn/internal/app.Version=$(VERSION)
 
-.PHONY: build test vet lint release clean
+.PHONY: build test vet lint release install clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN) .
+
+install: build
+	install -m 755 bin/$(BIN) $(PREFIX)/bin/$(BIN)
 
 test:
 	go test ./...
