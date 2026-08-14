@@ -113,7 +113,7 @@ func TestHistoryRoundtrip(t *testing.T) {
 	}
 	want := []store.HistoryEntry{
 		{Time: time.Now().Add(-time.Hour), Total: 10, Delta: 0, Files: 0},
-		{Time: time.Now(), Total: 25, Delta: 15, Files: 3},
+		{Time: time.Now(), Total: 25, Delta: 15, Files: 3, DiskUsed: 1 << 30, DiskTotal: 200 << 30},
 	}
 	for _, e := range want {
 		if err := st.AppendHistory(e); err != nil {
@@ -128,8 +128,33 @@ func TestHistoryRoundtrip(t *testing.T) {
 		t.Fatalf("history = %d entries, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i].Total != want[i].Total || got[i].Delta != want[i].Delta || got[i].Files != want[i].Files {
+		if got[i].Total != want[i].Total || got[i].Delta != want[i].Delta ||
+			got[i].Files != want[i].Files || got[i].DiskUsed != want[i].DiskUsed ||
+			got[i].DiskTotal != want[i].DiskTotal {
 			t.Errorf("entry %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// appendHistory must record real disk occupancy alongside scanned bytes.
+func TestAppendHistoryRecordsDisk(t *testing.T) {
+	t.Setenv("OTSN_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := snapshot.New([]string{t.TempDir()}, time.Now())
+	if err := appendHistory(st, nil, snap); err != nil {
+		t.Fatal(err)
+	}
+	hist, err := st.History()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("history = %d entries, want 1", len(hist))
+	}
+	if hist[0].DiskTotal <= 0 || hist[0].DiskUsed < 0 || hist[0].DiskUsed > hist[0].DiskTotal {
+		t.Errorf("disk occupancy not recorded: %+v", hist[0])
 	}
 }

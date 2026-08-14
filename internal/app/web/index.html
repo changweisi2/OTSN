@@ -264,8 +264,8 @@
   <section class="rise" style="animation-delay:.5s">
     <div class="panel">
       <div class="panel-head">
-        <span>CAPACITY TIMELINE</span>
-        <span class="hint" id="rangeHint">TOTAL BYTES</span>
+        <span>DISK USAGE TIMELINE</span>
+        <span class="hint" id="rangeHint">DISK USED BYTES</span>
       </div>
       <div class="chart" id="chartWrap">
         <svg id="chart"></svg>
@@ -416,16 +416,33 @@ async function loadDelta() {
   return hist;
 }
 
-/* ---- timeline chart (SVG area + glow line + hover crosshair) ---- */
-let chartData = [];
+/* ---- timeline chart (disk usage, SVG area + glow line + hover) ---- */
+let chartData = [];   // processed points: {time, v, used, total}
+let rawHist = [];     // last raw history, for redraws
+let chartMode = "disk"; // "disk" | "files" (fallback)
 const CHART_ACC = "#7db4f9";
+
+function buildChartData(hist) {
+  const useDisk = hist.length > 0 && hist[hist.length - 1].disk_used != null;
+  chartMode = useDisk ? "disk" : "files";
+  $("rangeHint").textContent = useDisk ? "DISK USED BYTES" : "SCANNED BYTES (NO DISK HISTORY)";
+  const pts = [];
+  for (const e of hist) {
+    const v = useDisk ? e.disk_used : e.total;
+    if (v == null) continue;
+    pts.push({time: e.time, v: v, used: e.disk_used, total: e.disk_total, delta: e.delta});
+  }
+  return pts;
+}
+
 function drawChart(hist) {
-  chartData = hist;
+  rawHist = hist;
+  chartData = buildChartData(hist);
   const svg = $("chart");
   const wrap = $("chartWrap");
   const W = Math.max(300, wrap.clientWidth), H = 158;
   const padL = 8, padR = 8, padT = 12, padB = 18;
-  const vals = hist.map(e => e.total);
+  const vals = chartData.map(d => d.v);
   const min = vals.length ? Math.min(...vals) : 0;
   const max = vals.length ? Math.max(...vals) : 1;
   const span = (max - min) || 1;
@@ -478,10 +495,17 @@ function chartHover(ev) {
   const e = chartData[best];
   const cx = x(best);
   showCross(cx);
-  tip.innerHTML = '<div class="t">' + fmtTime(e.time) + '</div>' +
-    '<div class="tv">' + fmtB(e.total) + '</div>' +
-    (e.delta ? '<div class="td ' + (e.delta > 0 ? "up" : "") + '">' +
-      (e.delta > 0 ? "+" : "") + fmtB(e.delta) + '</div>' : "");
+  if (chartMode === "disk" && e.used != null) {
+    const pct = e.total > 0 ? (100 * e.used / e.total).toFixed(1) : "—";
+    tip.innerHTML = '<div class="t">' + fmtTime(e.time) + '</div>' +
+      '<div class="tv">' + fmtB(e.used) + ' used</div>' +
+      '<div class="td">of ' + fmtB(e.total) + ' · ' + pct + '%</div>';
+  } else {
+    tip.innerHTML = '<div class="t">' + fmtTime(e.time) + '</div>' +
+      '<div class="tv">' + fmtB(e.v) + '</div>' +
+      (e.delta ? '<div class="td ' + (e.delta > 0 ? "up" : "") + '">' +
+        (e.delta > 0 ? "+" : "") + fmtB(e.delta) + '</div>' : "");
+  }
   tip.style.opacity = "1";
   const tw = tip.offsetWidth, th = tip.offsetHeight;
   const tx = Math.min(Math.max(8, mx - tw / 2), r.width - tw - 8);
@@ -571,7 +595,7 @@ $("reload").addEventListener("click", () => {
   setTimeout(() => $("reload").classList.remove("spin"), 650);
   refresh();
 });
-window.addEventListener("resize", () => drawChart(chartData));
+window.addEventListener("resize", () => drawChart(rawHist));
 
 refresh();
 setInterval(refresh, 10000);

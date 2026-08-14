@@ -137,11 +137,13 @@ func (s *Store) Prune(keep int) ([]string, error) {
 // HistoryEntry is one scan's outcome, recorded so the web timeline can be
 // rendered without decoding every snapshot file.
 type HistoryEntry struct {
-	Time  time.Time `json:"time"`
-	Total int64     `json:"total"`
-	Delta int64     `json:"delta"`
-	Files int       `json:"files"`
-	Roots []string  `json:"roots,omitempty"`
+	Time      time.Time `json:"time"`
+	Total     int64     `json:"total"`
+	Delta     int64     `json:"delta"`
+	Files     int       `json:"files"`
+	Roots     []string  `json:"roots,omitempty"`
+	DiskUsed  int64     `json:"disk_used,omitempty"`
+	DiskTotal int64     `json:"disk_total,omitempty"`
 }
 
 func (s *Store) historyPath() string { return filepath.Join(s.dir, "history.jsonl") }

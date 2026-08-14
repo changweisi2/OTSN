@@ -227,9 +227,16 @@ func Scan(args []string) error {
 	return nil
 }
 
-// appendHistory records one scan outcome for the web timeline.
+// appendHistory records one scan outcome for the web timeline, including
+// the disk occupancy (df semantics) at scan time.
 func appendHistory(st *store.Store, prev, snap *snapshot.Snapshot) error {
 	e := store.HistoryEntry{Time: snap.Time, Total: snap.Total(), Roots: snap.Roots}
+	if len(snap.Roots) > 0 {
+		if total, used, err := diskUsage(snap.Roots[0]); err == nil {
+			e.DiskTotal = total
+			e.DiskUsed = used
+		}
+	}
 	if prev != nil {
 		sum := snapshot.Summarize(snapshot.Diff(prev, snap))
 		e.Delta = sum.Delta
