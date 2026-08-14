@@ -94,7 +94,8 @@
   .g-prog { fill: none; stroke: url(#gGrad); stroke-width: 9; stroke-linecap: round;
     filter: drop-shadow(0 0 5px rgba(125, 180, 249, .6));
     transition: stroke-dashoffset 1s cubic-bezier(.22, 1, .36, 1); }
-  .gauge-center { position: absolute; text-align: center; }
+  .gauge-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; pointer-events: none; }
   .gauge-label { font-size: 9px; letter-spacing: .3em; color: var(--dim); margin-bottom: 6px; }
   .gauge-value { font-size: 27px; font-weight: 700; color: #2c3542;
     font-variant-numeric: tabular-nums; }
@@ -221,9 +222,9 @@
                 transform="rotate(-90 100 100)"/>
       </svg>
       <div class="gauge-center">
-        <div class="gauge-label">TOTAL</div>
-        <div class="gauge-value" id="total">—</div>
-        <div class="gauge-sub" id="gaugeSub">Δ —</div>
+        <div class="gauge-label">DISK USED</div>
+        <div class="gauge-value" id="gaugePct">—</div>
+        <div class="gauge-sub" id="gaugeSub">—</div>
       </div>
     </div>
 
@@ -242,8 +243,8 @@
           <div class="s">retention 48</div>
         </div>
         <div class="card rise" style="animation-delay:.32s">
-          <div class="k">SCANNED</div><div class="v" id="scanned">—</div>
-          <div class="s">last scan</div>
+          <div class="k">TOTAL</div><div class="v" id="total">—</div>
+          <div class="s" id="scanned">—</div>
         </div>
       </div>
 
@@ -337,7 +338,7 @@ function tickClock() {
 setInterval(tickClock, 1000);
 tickClock();
 
-/* ---- status + cards ---- */
+/* ---- status + cards + gauge ---- */
 async function loadStatus() {
   const s = await get("/api/status");
   $("ver").textContent = s.version || "—";
@@ -351,7 +352,27 @@ async function loadStatus() {
   countUp($("snaps"), s.history, v => fmtInt(Math.round(v)));
   $("scanned").textContent = fmtTime(s.scannedAt);
   $("skips").textContent = "skipped " + fmtInt(s.skips);
+  drawGauge(s.disks || []);
   return s;
+}
+
+/* gauge ring: real disk usage ratio (used / total capacity) */
+function drawGauge(disks) {
+  const C = 527.8;
+  const prog = $("gProg");
+  const pctEl = $("gaugePct");
+  const sub = $("gaugeSub");
+  if (!disks.length) {
+    prog.style.strokeDashoffset = String(C);
+    pctEl.textContent = "—";
+    sub.textContent = "no disk data";
+    return;
+  }
+  const d = disks[0];
+  const frac = d.total > 0 ? d.used / d.total : 0;
+  prog.style.strokeDashoffset = String(C * (1 - Math.min(1, frac)));
+  countUp(pctEl, frac * 100, v => v.toFixed(1) + "%");
+  sub.textContent = fmtB(d.used) + " of " + fmtB(d.total);
 }
 
 async function loadDelta() {
@@ -370,18 +391,6 @@ async function loadDelta() {
   countUp(el, d, v => (v > 0 ? "+" : "") + fmtB(v));
   el.className = "v" + (d > 0 ? " up" : d < 0 ? " down" : "");
   $("deltaFiles").textContent = fmtInt(last.files) + " files · " + fmtTime(last.time);
-
-  /* gauge ring: current total vs historic max */
-  const cur = hist[hist.length - 1].total;
-  const max = Math.max(...hist.map(e => e.total));
-  const frac = max > 0 ? cur / max : 0;
-  const C = 527.8;
-  $("gProg").style.strokeDashoffset = String(C * (1 - frac));
-  const sub = $("gaugeSub");
-  const pct = last.total > 0 ? (d / last.total) * 100 : 0;
-  const cls = d > 0 ? "up" : d < 0 ? "down" : "";
-  sub.innerHTML = "vs peak " + fmtB(max) + " · Δ <b class=\"" + cls + "\">" +
-                  (d >= 0 ? "+" : "") + pct.toFixed(2) + "%</b>";
 
   drawChart(hist);
   return hist;

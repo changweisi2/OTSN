@@ -170,6 +170,7 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 			"entries":   entriesOf(snap),
 			"history":   len(hist),
 			"skips":     skipsOf(snap),
+			"disks":     diskStats(rootsOf(snap)),
 		}
 		writeJSON(w, out)
 	})
@@ -331,4 +332,22 @@ func skipsOf(s *snapshot.Snapshot) int64 {
 		return 0
 	}
 	return s.Skips
+}
+
+// diskStats reports the capacity of the filesystem holding each root.
+func diskStats(roots []string) []map[string]any {
+	var out []map[string]any
+	for _, r := range roots {
+		total, used, err := diskUsage(r)
+		if err != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"path":  r,
+			"total": total,
+			"used":  used,
+			"free":  total - used,
+		})
+	}
+	return out
 }
