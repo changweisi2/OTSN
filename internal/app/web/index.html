@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dwatch</title>
+<title>otsn</title>
 <style>
   :root {
     --bg:#0b0e14; --panel:#11151f; --line:#1c2430; --fg:#c9d4e3;
@@ -50,7 +50,7 @@
 </head>
 <body>
 <header>
-  <h1>◈ <b>dwatch</b></h1>
+  <h1>◈ <b>otsn</b></h1>
   <span class="roots" id="roots">—</span>
   <span class="live" id="live">●</span>
 </header>
@@ -168,7 +168,7 @@ async function loadTop() {
   const t = await get("/api/top?depth=2&n=14");
   const tb = $("top").querySelector("tbody");
   const groups = t.groups || [];
-  if (!groups.length) { tb.innerHTML = '<tr><td class="empty">no snapshots yet — run dwatch scan</td></tr>'; return; }
+  if (!groups.length) { tb.innerHTML = '<tr><td class="empty">no snapshots yet — run otsn scan</td></tr>'; return; }
   const maxW = 130;
   tb.innerHTML = groups.map(g =>
     '<tr><td class="path" title="' + esc(g.path) + '">' + esc(g.path) + '</td>' +

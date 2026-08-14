@@ -1,4 +1,4 @@
-// Package app implements the dwatch subcommands.
+// Package app implements the otsn subcommands.
 package app
 
 import (
@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
-	"dwatch/internal/events"
-	"dwatch/internal/snapshot"
-	"dwatch/internal/store"
-	"dwatch/internal/ui"
+	"otsn/internal/events"
+	"otsn/internal/snapshot"
+	"otsn/internal/store"
+	"otsn/internal/ui"
 )
 
-// Version is the dwatch release version, overridable at build time with
-// -ldflags "-X dwatch/internal/app.Version=...".
+// Version is the otsn release version, overridable at build time with
+// -ldflags "-X otsn/internal/app.Version=...".
 var Version = "0.1.0"
 
 // defaultKeep is how many snapshots the store retains automatically.
@@ -146,13 +146,13 @@ func clip(s string, n int) string {
 
 // ---- scan ---------------------------------------------------------------
 
-// Scan implements 'dwatch scan'.
+// Scan implements 'otsn scan'.
 func Scan(args []string) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
 	excl := fs.String("exclude", defaultExclude, "comma-separated path prefixes to skip")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch scan [flags] [paths...]\n\nscan paths and store a snapshot; with no paths, scans the whole disk\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn scan [flags] [paths...]\n\nscan paths and store a snapshot; with no paths, scans the whole disk\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -229,7 +229,7 @@ func appendHistory(st *store.Store, prev, snap *snapshot.Snapshot) error {
 
 // ---- watch ---------------------------------------------------------------
 
-// Watch implements 'dwatch watch'.
+// Watch implements 'otsn watch'.
 func Watch(args []string) error {
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	interval := fs.Duration("interval", 10*time.Minute, "scan interval")
@@ -238,7 +238,7 @@ func Watch(args []string) error {
 	jsonOut := fs.Bool("json", false, "emit one JSON object per scan (JSONL)")
 	excl := fs.String("exclude", defaultExclude, "comma-separated path prefixes to skip")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch watch [flags] [paths...]\n\nkeep scanning periodically and print growth as it happens\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn watch [flags] [paths...]\n\nkeep scanning periodically and print growth as it happens\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -273,7 +273,7 @@ func Watch(args []string) error {
 		note = " · event-triggered"
 	}
 	fmt.Printf("%s watching %s · every %s%s\n",
-		ui.Title("dwatch"), ui.Abbrev(strings.Join(roots, ", ")), *interval, note)
+		ui.Title("otsn"), ui.Abbrev(strings.Join(roots, ", ")), *interval, note)
 
 	minGap := *interval / 5
 	if minGap > 30*time.Second {
@@ -362,7 +362,7 @@ func reportDelta(snap, prev *snapshot.Snapshot, alertMB int64, jsonOut bool) {
 
 // ---- report ---------------------------------------------------------------
 
-// Report implements 'dwatch report'.
+// Report implements 'otsn report'.
 func Report(args []string) error {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	since := fs.String("since", "", "start snapshot: index from 'list', or a time prefix like 2025-01-01")
@@ -372,7 +372,7 @@ func Report(args []string) error {
 	topN := fs.Int("top", 12, "maximum rows")
 	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch report [flags]\n\ndiff two snapshots: where and when disk space grew\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn report [flags]\n\ndiff two snapshots: where and when disk space grew\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -390,7 +390,7 @@ func Report(args []string) error {
 		return err
 	}
 	if len(snaps) == 0 {
-		return errors.New("no snapshots yet — run 'dwatch scan' first")
+		return errors.New("no snapshots yet — run 'otsn scan' first")
 	}
 	if *all {
 		return reportAll(st, snaps, *jsonOut)
@@ -474,7 +474,7 @@ func renderReport(from, to *snapshot.Snapshot, depth int, minBytes int64, topN i
 	}
 
 	fmt.Println()
-	fmt.Println(ui.Title("dwatch report"))
+	fmt.Println(ui.Title("otsn report"))
 	fmt.Printf("  %s  →  %s\n", ui.Hi(from.Time.Format("2006-01-02 15:04")), ui.Hi(to.Time.Format("2006-01-02 15:04")))
 	head := fmt.Sprintf("  Δ %s  ·  %s files changed  (+%d added, −%d removed, %d modified)",
 		signDelta(sum.Delta), ui.FmtInt(int64(sum.Added+sum.Removed+sum.Changed)),
@@ -567,7 +567,7 @@ func reportAll(st *store.Store, snaps []store.Snap, jsonOut bool) error {
 		return printJSON(out)
 	}
 	fmt.Println()
-	fmt.Println(ui.Title("dwatch report — all intervals"))
+	fmt.Println(ui.Title("otsn report — all intervals"))
 	tbl := make([][]string, 0, len(rows))
 	for _, r := range rows {
 		tbl = append(tbl, []string{
@@ -581,7 +581,7 @@ func reportAll(st *store.Store, snaps []store.Snap, jsonOut bool) error {
 
 // ---- top ---------------------------------------------------------------
 
-// Top implements 'dwatch top'.
+// Top implements 'otsn top'.
 func Top(args []string) error {
 	fs := flag.NewFlagSet("top", flag.ContinueOnError)
 	depth := fs.Int("depth", 2, "aggregation depth (0 = per file)")
@@ -589,7 +589,7 @@ func Top(args []string) error {
 	minStr := fs.String("min", "0", "minimum size to list")
 	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch top [flags]\n\nlargest directories in the latest snapshot\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn top [flags]\n\nlargest directories in the latest snapshot\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -607,7 +607,7 @@ func Top(args []string) error {
 		return err
 	}
 	if snap == nil {
-		return errors.New("no snapshots yet — run 'dwatch scan' first")
+		return errors.New("no snapshots yet — run 'otsn scan' first")
 	}
 	total := snap.Total()
 	var groups []snapshot.Group
@@ -633,7 +633,7 @@ func Top(args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println(ui.Title("dwatch top"))
+	fmt.Println(ui.Title("otsn top"))
 	fmt.Printf("  %s  ·  %s total  ·  %s entries\n",
 		ui.Hi(snap.Time.Format("2006-01-02 15:04")), ui.FmtBytes(total), ui.FmtInt(int64(len(snap.Entries))))
 	rows := make([][]string, 0, min(*n, len(groups)))
@@ -661,12 +661,12 @@ func Top(args []string) error {
 
 // ---- list / prune ---------------------------------------------------------
 
-// List implements 'dwatch list'.
+// List implements 'otsn list'.
 func List(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch list [flags]\n\nshow stored snapshots\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn list [flags]\n\nshow stored snapshots\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -690,9 +690,9 @@ func List(args []string) error {
 		return printJSON(out)
 	}
 	fmt.Println()
-	fmt.Println(ui.Title("dwatch list"))
+	fmt.Println(ui.Title("otsn list"))
 	if len(snaps) == 0 {
-		fmt.Println(ui.Dim("  no snapshots yet — run 'dwatch scan' first"))
+		fmt.Println(ui.Dim("  no snapshots yet — run 'otsn scan' first"))
 		return nil
 	}
 	rows := make([][]string, 0, len(snaps))
@@ -709,13 +709,13 @@ func List(args []string) error {
 	return nil
 }
 
-// Prune implements 'dwatch prune'.
+// Prune implements 'otsn prune'.
 func Prune(args []string) error {
 	fs := flag.NewFlagSet("prune", flag.ContinueOnError)
 	keep := fs.Int("keep", defaultKeep, "snapshots to keep")
 	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch prune [flags]\n\nremove old snapshots, keeping the --keep most recent\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn prune [flags]\n\nremove old snapshots, keeping the --keep most recent\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -732,7 +732,7 @@ func Prune(args []string) error {
 		return printJSON(map[string]any{"removed": removed, "kept": *keep})
 	}
 	fmt.Println()
-	fmt.Println(ui.Title("dwatch prune"))
+	fmt.Println(ui.Title("otsn prune"))
 	if len(removed) == 0 {
 		fmt.Println(ui.Dim("  nothing to remove"))
 		return nil

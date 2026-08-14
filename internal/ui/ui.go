@@ -1,4 +1,4 @@
-// Package ui renders dwatch's minimal terminal output: flat colors,
+// Package ui renders otsn's minimal terminal output: flat colors,
 // aligned tables, and human-readable sizes. Output degrades gracefully
 // when not attached to a terminal or when NO_COLOR is set.
 package ui
@@ -238,5 +238,5 @@ func Done() {
 
 // Warnf prints a yellow warning to stderr.
 func Warnf(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, paint("33", "dwatch: "+format+"\n"), a...)
+	fmt.Fprintf(os.Stderr, paint("33", "otsn: "+format+"\n"), a...)
 }

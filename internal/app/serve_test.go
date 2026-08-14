@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"dwatch/internal/snapshot"
-	"dwatch/internal/store"
+	"otsn/internal/snapshot"
+	"otsn/internal/store"
 )
 
 func testServeEnv(t *testing.T) (*store.Store, *snapshot.Snapshot) {
 	t.Helper()
-	t.Setenv("DWATCH_DIR", t.TempDir())
+	t.Setenv("OTSN_DIR", t.TempDir())
 	st, err := store.Open()
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestServeAPI(t *testing.T) {
 }
 
 func TestHistoryRoundtrip(t *testing.T) {
-	t.Setenv("DWATCH_DIR", t.TempDir())
+	t.Setenv("OTSN_DIR", t.TempDir())
 	st, err := store.Open()
 	if err != nil {
 		t.Fatal(err)

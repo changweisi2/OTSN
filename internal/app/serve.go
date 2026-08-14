@@ -16,16 +16,16 @@ import (
 	"syscall"
 	"time"
 
-	"dwatch/internal/events"
-	"dwatch/internal/snapshot"
-	"dwatch/internal/store"
-	"dwatch/internal/ui"
+	"otsn/internal/events"
+	"otsn/internal/snapshot"
+	"otsn/internal/store"
+	"otsn/internal/ui"
 )
 
 //go:embed web/index.html
 var webFS embed.FS
 
-// Serve implements 'dwatch serve': a local web dashboard backed by a
+// Serve implements 'otsn serve': a local web dashboard backed by a
 // background scan loop. The latest snapshot is kept in memory so API
 // responses never decode snapshot files.
 func Serve(args []string) error {
@@ -35,7 +35,7 @@ func Serve(args []string) error {
 	useEvents := fs.Bool("events", true, "scan early when filesystem events occur")
 	excl := fs.String("exclude", defaultExclude, "comma-separated path prefixes to skip")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: dwatch serve [flags] [paths...]\n\nserve a local web dashboard of disk usage\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn serve [flags] [paths...]\n\nserve a local web dashboard of disk usage\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -78,7 +78,7 @@ func Serve(args []string) error {
 		srv.Shutdown(context.Background())
 	}()
 	fmt.Printf("%s dashboard at %s · watching %s · every %s\n",
-		ui.Title("dwatch"), ui.Hi("http://"+*addr), strings.Join(roots, ", "), *interval)
+		ui.Title("otsn"), ui.Hi("http://"+*addr), strings.Join(roots, ", "), *interval)
 	err = srv.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

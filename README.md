@@ -1,10 +1,10 @@
-# dwatch — disk usage watcher
+# otsn — disk usage watcher
 
 追踪磁盘空间变化：**什么时候、在哪个路径、涨了多少**。一个静态二进制，运行于 Linux / macOS / Windows。
 
 ```console
-$ dwatch watch --interval 10m /home/cat
-◈ dwatch watching /home/cat · every 10m0s · event-triggered
+$ otsn watch --interval 10m /home/cat
+◈ otsn watching /home/cat · every 10m0s · event-triggered
 10:32:01 Δ +412 MB  ·  1,204 files changed  ·  top: ~/.cache (+380 MB)
 10:42:01 Δ +12 MB   ·  84 files changed     ·  top: ~/Downloads (+9 MB)
 ▲ 11:02:01 Δ +1.8 GB  ·  3,120 files changed  ·  top: ~/vmdisk (+1.7 GB)  ▲ growth ≥ 1 GB
@@ -23,30 +23,30 @@ $ dwatch watch --interval 10m /home/cat
 ## 安装
 
 ```console
-$ make build                # bin/dwatch
+$ make build                # bin/otsn
 $ make release              # 交叉编译 6 个目标到 dist/
 ```
 
 或直接：
 
 ```console
-$ go build -o dwatch .
+$ go build -o otsn .
 ```
 
 ## 快速开始
 
 ```console
 # 1. 基线快照（默认整盘；可指定目录）
-$ dwatch scan /home/cat
+$ otsn scan /home/cat
 
 # 2. 常驻监听（Ctrl-C 退出；建议配合 systemd / launchd / 任务计划）
-$ dwatch watch --interval 10m --alert 1024 /home/cat
+$ otsn watch --interval 10m --alert 1024 /home/cat
 
 # 3. 查看两次快照之间的增长明细
-$ dwatch report
+$ otsn report
 
 # 4. 当前占用排行
-$ dwatch top --depth 2
+$ otsn top --depth 2
 ```
 
 ## 命令
@@ -64,11 +64,11 @@ $ dwatch top --depth 2
 
 ## Web 仪表盘
 
-`dwatch serve` 在本地起一个极简 Web 界面（深色 + 青蓝风格，无第三方依赖，10 秒自动刷新）：
+`otsn serve` 在本地起一个极简 Web 界面（深色 + 青蓝风格，无第三方依赖，10 秒自动刷新）：
 
 ```console
-$ dwatch serve --interval 5m /home/cat
-◈ dwatch dashboard at http://127.0.0.1:8787 · watching /home/cat · every 5m0s
+$ otsn serve --interval 5m /home/cat
+◈ otsn dashboard at http://127.0.0.1:8787 · watching /home/cat · every 5m0s
 ```
 
 浏览器打开 http://127.0.0.1:8787：
@@ -95,11 +95,11 @@ $ dwatch serve --interval 5m /home/cat
 └──────────────────────────────────────────────────┘
 ```
 
-快照存储位置：`$DWATCH_DIR`（默认 `<用户配置目录>/dwatch/snapshots`，Linux `~/.config/dwatch`，macOS `~/Library/Application Support/dwatch`，Windows `%AppData%\dwatch`）。
+快照存储位置：`$OTSN_DIR`（默认 `<用户配置目录>/otsn/snapshots`，Linux `~/.config/otsn`，macOS `~/Library/Application Support/otsn`，Windows `%AppData%\otsn`）。
 
 ### 为什么不做"增量扫描"？
 
-目录 mtime 只在**该目录的直接子项**增删改时更新；文件原地增长（append）和深层变化不会更新任何祖先目录的 mtime。因此"目录 mtime 短路"必然漏检，dwatch 选择**每轮全量并发遍历**换取结果的绝对可靠。作为补偿：
+目录 mtime 只在**该目录的直接子项**增删改时更新；文件原地增长（append）和深层变化不会更新任何祖先目录的 mtime。因此"目录 mtime 短路"必然漏检，otsn 选择**每轮全量并发遍历**换取结果的绝对可靠。作为补偿：
 
 - 扫描只读元数据（Lstat），不读文件内容，整盘秒级完成；
 - 事件引擎提前触发，发现延迟 ≈ 事件发生到下一轮扫描的间隔；

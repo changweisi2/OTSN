@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"dwatch/internal/snapshot"
+	"otsn/internal/snapshot"
 )
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	t.Setenv("DWATCH_DIR", t.TempDir())
+	t.Setenv("OTSN_DIR", t.TempDir())
 	st, err := Open()
 	if err != nil {
 		t.Fatal(err)

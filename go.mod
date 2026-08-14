@@ -1,4 +1,4 @@
-module dwatch
+module otsn
 
 go 1.26.5
 

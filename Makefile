@@ -1,6 +1,6 @@
-BIN     := dwatch
+BIN     := otsn
 VERSION := 0.1.0
-LDFLAGS := -s -w -X dwatch/internal/app.Version=$(VERSION)
+LDFLAGS := -s -w -X otsn/internal/app.Version=$(VERSION)
 
 .PHONY: build test vet lint release clean
 

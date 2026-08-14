@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"dwatch/internal/snapshot"
+	"otsn/internal/snapshot"
 )
 
 const timeFmt = "20060102T150405.000000000Z"
@@ -28,15 +28,15 @@ type Store struct {
 }
 
 // Open returns the snapshot store, creating it if needed. The directory is
-// $DWATCH_DIR if set, otherwise <user config dir>/dwatch/snapshots.
+// $OTSN_DIR if set, otherwise <user config dir>/otsn/snapshots.
 func Open() (*Store, error) {
-	dir := os.Getenv("DWATCH_DIR")
+	dir := os.Getenv("OTSN_DIR")
 	if dir == "" {
 		cfg, err := os.UserConfigDir()
 		if err != nil {
 			return nil, err
 		}
-		dir = filepath.Join(cfg, "dwatch")
+		dir = filepath.Join(cfg, "otsn")
 	}
 	dir = filepath.Join(dir, "snapshots")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

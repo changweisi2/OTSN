@@ -1,4 +1,4 @@
-// dwatch tracks disk usage over time: where and when space grows.
+// otsn tracks disk usage over time: where and when space grows.
 package main
 
 import (
@@ -6,12 +6,12 @@ import (
 	"io"
 	"os"
 
-	"dwatch/internal/app"
+	"otsn/internal/app"
 )
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "dwatch: "+err.Error())
+		fmt.Fprintln(os.Stderr, "otsn: "+err.Error())
 		os.Exit(1)
 	}
 }
@@ -37,21 +37,21 @@ func run(args []string) error {
 	case "serve":
 		return app.Serve(args[1:])
 	case "version":
-		fmt.Printf("dwatch %s\n", app.Version)
+		fmt.Printf("otsn %s\n", app.Version)
 		return nil
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (see 'dwatch help')", args[0])
+		return fmt.Errorf("unknown command %q (see 'otsn help')", args[0])
 	}
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `dwatch — disk usage watcher
+	fmt.Fprint(w, `otsn — disk usage watcher
 
 usage:
-  dwatch <command> [flags] [paths...]
+  otsn <command> [flags] [paths...]
 
 commands:
   scan      scan paths and store a snapshot (default: whole disk)
@@ -63,6 +63,6 @@ commands:
   serve     local web dashboard (http://127.0.0.1:8787)
   version   print version
 
-run 'dwatch <command> -h' for command flags.
+run 'otsn <command> -h' for command flags.
 `)
 }
