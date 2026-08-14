@@ -1,9 +1,11 @@
 package snapshot
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, path string, data []byte) {
@@ -117,5 +119,49 @@ func TestScanSkipsSymlinkedDirs(t *testing.T) {
 	}
 	if got, want := s.Total(), int64(15); got != want {
 		t.Errorf("Total = %d, want %d (symlink must not be followed)", got, want)
+	}
+}
+
+// High-fanout trees once deadlocked every worker on a full bounded
+// channel; the task queue must never block enqueue.
+func TestScanHighFanoutNoDeadlock(t *testing.T) {
+	root := t.TempDir()
+	dirs := 0
+	for i := 0; i < 120; i++ {
+		sub := filepath.Join(root, fmt.Sprintf("d%03d", i))
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dirs++
+		for j := 0; j < 120; j++ {
+			leaf := filepath.Join(sub, fmt.Sprintf("s%03d", j))
+			if err := os.MkdirAll(leaf, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			dirs++
+			if err := os.WriteFile(filepath.Join(leaf, "f"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s, err := Scan([]string{root}, nil, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if got, want := s.Total(), int64(120*120); got != want {
+			t.Errorf("Total = %d, want %d", got, want)
+		}
+		if got, want := len(s.Entries), 1+dirs+120*120; got != want {
+			t.Errorf("entries = %d, want %d", got, want)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("scan deadlocked on high-fanout tree")
 	}
 }

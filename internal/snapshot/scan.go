@@ -50,17 +50,43 @@ func Scan(roots []string, exclude []string, onProgress func(int64)) (*Snapshot, 
 		rootJobs = append(rootJobs, r)
 	}
 
-	jobs := make(chan string, runtime.GOMAXPROCS(0)*16)
-	// pending tracks every queued directory; jobs is closed only once all
-	// of them have been processed, so workers never send on a closed chan.
-	var pending sync.WaitGroup
+	// A mutex+cond task queue instead of a bounded channel: enqueue can
+	// never block, so a burst of high-fanout directories cannot deadlock
+	// every worker on a full channel.
 	var (
 		mu      sync.Mutex
-		entries []Entry
-		done    atomic.Int64
-		skips   atomic.Int64
-		errMu   sync.Mutex
-		errs    []string
+		cond    = sync.NewCond(&mu)
+		todo    []string
+		pending int
+	)
+	enqueue := func(dir string) {
+		mu.Lock()
+		todo = append(todo, dir)
+		pending++
+		cond.Signal()
+		mu.Unlock()
+	}
+	dequeue := func() (string, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		for len(todo) == 0 && pending > 0 {
+			cond.Wait()
+		}
+		if pending == 0 {
+			return "", false
+		}
+		dir := todo[len(todo)-1]
+		todo = todo[:len(todo)-1]
+		return dir, true
+	}
+
+	var (
+		entriesMu sync.Mutex
+		entries   []Entry
+		done      atomic.Int64
+		skips     atomic.Int64
+		errMu     sync.Mutex
+		errs      []string
 	)
 	skip := func(p string, err error) {
 		skips.Add(1)
@@ -71,16 +97,15 @@ func Scan(roots []string, exclude []string, onProgress func(int64)) (*Snapshot, 
 		errMu.Unlock()
 	}
 	add := func(e Entry) {
-		mu.Lock()
+		entriesMu.Lock()
 		entries = append(entries, e)
-		mu.Unlock()
+		entriesMu.Unlock()
 		n := done.Add(1)
 		if onProgress != nil && n%8192 == 0 {
 			onProgress(n)
 		}
 	}
 	visit := func(dir string) {
-		defer pending.Done()
 		fi, err := os.Lstat(dir)
 		if err != nil {
 			skip(dir, err)
@@ -106,8 +131,7 @@ func Scan(roots []string, exclude []string, onProgress func(int64)) (*Snapshot, 
 				continue
 			}
 			if fi.IsDir() {
-				pending.Add(1)
-				jobs <- p
+				enqueue(p)
 			} else {
 				add(Entry{Path: p, Size: fi.Size(), MTime: fi.ModTime().UnixNano()})
 			}
@@ -119,19 +143,24 @@ func Scan(roots []string, exclude []string, onProgress func(int64)) (*Snapshot, 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for dir := range jobs {
+			for {
+				dir, ok := dequeue()
+				if !ok {
+					return
+				}
 				visit(dir)
+				mu.Lock()
+				pending--
+				if pending == 0 {
+					cond.Broadcast()
+				}
+				mu.Unlock()
 			}
 		}()
 	}
-	pending.Add(len(rootJobs))
 	for _, r := range rootJobs {
-		jobs <- r
+		enqueue(r)
 	}
-	go func() {
-		pending.Wait()
-		close(jobs)
-	}()
 	wg.Wait()
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
