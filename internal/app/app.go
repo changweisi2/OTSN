@@ -245,6 +245,36 @@ func appendHistory(st *store.Store, prev, snap *snapshot.Snapshot) error {
 	return st.AppendHistory(e)
 }
 
+// backfillHistory adds timeline entries for archived snapshots that
+// predate the history log, so the web timeline shows every snapshot.
+func backfillHistory(st *store.Store) error {
+	snaps, err := st.List()
+	if err != nil {
+		return err
+	}
+	hist, err := st.History()
+	if err != nil {
+		return err
+	}
+	have := make(map[int64]bool, len(hist))
+	for _, e := range hist {
+		have[e.Time.UnixNano()] = true
+	}
+	for _, s := range snaps {
+		if have[s.Time.UnixNano()] {
+			continue
+		}
+		snap, err := st.Load(s)
+		if err != nil {
+			continue
+		}
+		if err := appendHistory(st, nil, snap); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // sameRoots reports whether two snapshots cover exactly the same roots,
 // regardless of argument order.
 func sameRoots(a, b *snapshot.Snapshot) bool {

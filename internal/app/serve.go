@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,11 @@ func Serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	go func() {
+		if err := backfillHistory(st); err != nil {
+			ui.Warnf("history backfill: %v", err)
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -206,13 +212,63 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 			"groups": rows,
 		})
 	})
+	// extra cache: snapshots without a history entry are loaded on demand
+	// so the timeline shows every snapshot (refreshed once a minute).
+	var (
+		extraMu   sync.Mutex
+		extraAt   time.Time
+		extraHist []store.HistoryEntry
+	)
+	loadExtra := func(hist []store.HistoryEntry) ([]store.HistoryEntry, error) {
+		extraMu.Lock()
+		defer extraMu.Unlock()
+		if time.Since(extraAt) < time.Minute && extraHist != nil {
+			return extraHist, nil
+		}
+		snaps, err := st.List()
+		if err != nil {
+			return nil, err
+		}
+		have := make(map[int64]bool, len(hist))
+		for _, e := range hist {
+			have[e.Time.UnixNano()] = true
+		}
+		out := make([]store.HistoryEntry, 0, len(snaps))
+		for _, s := range snaps {
+			if have[s.Time.UnixNano()] {
+				continue
+			}
+			snap, err := st.Load(s)
+			if err != nil {
+				continue
+			}
+			e := store.HistoryEntry{Time: snap.Time, Total: snap.Total(), Roots: snap.Roots}
+			if len(snap.Roots) > 0 {
+				if total, used, err := diskUsage(snap.Roots[0]); err == nil {
+					e.DiskTotal = total
+					e.DiskUsed = used
+				}
+			}
+			out = append(out, e)
+		}
+		extraHist = out
+		extraAt = time.Now()
+		return out, nil
+	}
 	mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
 		hist, err := st.History()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"history": hist})
+		extra, err := loadExtra(hist)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		all := append(hist, extra...)
+		sort.Slice(all, func(i, j int) bool { return all[i].Time.Before(all[j].Time) })
+		writeJSON(w, map[string]any{"history": all})
 	})
 	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) {
 		snaps, err := st.List()

@@ -158,3 +158,39 @@ func TestAppendHistoryRecordsDisk(t *testing.T) {
 		t.Errorf("disk occupancy not recorded: %+v", hist[0])
 	}
 }
+
+// Snapshots saved before the history log existed must get backfilled so
+// the web timeline shows every snapshot.
+func TestBackfillHistory(t *testing.T) {
+	t.Setenv("OTSN_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	snap := snapshot.New([]string{root}, time.Now().Add(-time.Hour))
+	if err := st.Save(snap); err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillHistory(st); err != nil {
+		t.Fatal(err)
+	}
+	hist, err := st.History()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("history = %d entries, want 1 backfilled", len(hist))
+	}
+	// Backfill must be idempotent.
+	if err := backfillHistory(st); err != nil {
+		t.Fatal(err)
+	}
+	hist, err = st.History()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("history = %d entries after second backfill, want 1", len(hist))
+	}
+}
