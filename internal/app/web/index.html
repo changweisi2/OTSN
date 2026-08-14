@@ -84,26 +84,26 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
     backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
     box-shadow: var(--shadow);
-    padding: 24px 26px;
-    display: flex; flex-direction: column; gap: 10px;
+    padding: 20px 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative; overflow: hidden;
   }
   .usage-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
     background: linear-gradient(90deg, transparent, var(--acc), transparent); }
   .usage-card::after { content: ""; position: absolute; top: -30px; right: -30px; width: 110px; height: 110px;
     background: radial-gradient(circle, rgba(125, 180, 249, .14), transparent 70%); }
-  .usage-label { font-size: 10px; letter-spacing: .26em; color: var(--dim); }
-  .usage-value { font-size: 36px; font-weight: 700; color: #2c3542;
-    font-variant-numeric: tabular-nums; line-height: 1.15; }
-  .usage-pct { font-size: 16px; color: var(--acc2); font-weight: 600; }
-  .usage-bar { height: 10px; background: rgba(125, 180, 249, .15); border-radius: 5px;
-    overflow: hidden; margin-top: 2px; }
-  .usage-bar-fill { height: 100%; width: 0%;
-    background: linear-gradient(90deg, var(--acc), var(--acc2));
-    border-radius: 5px; transition: width 1s cubic-bezier(.22, 1, .36, 1); }
-  .usage-meta { font-size: 11px; color: var(--dim); margin-top: auto; }
-
-  .hero-right { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .gauge-label { font-size: 10px; letter-spacing: .26em; color: var(--dim); margin-bottom: 4px; }
+  .gauge { position: relative; }
+  .gauge svg { width: 176px; height: 176px; display: block; }
+  .g-track { fill: none; stroke: rgba(125, 180, 249, .16); stroke-width: 9; }
+  .g-prog { fill: none; stroke: url(#gGrad); stroke-width: 9; stroke-linecap: round;
+    filter: drop-shadow(0 0 5px rgba(125, 180, 249, .6));
+    transition: stroke-dashoffset 1s cubic-bezier(.22, 1, .36, 1); }
+  .gauge-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; pointer-events: none; }
+  .gauge-value { font-size: 26px; font-weight: 700; color: #2c3542; font-variant-numeric: tabular-nums; }
+  .gauge-sub { margin-top: 3px; font-size: 11px; color: var(--dim); }
+  .gauge-foot { margin-top: 10px; font-size: 11px; color: var(--dim); }
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .card {
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
@@ -209,11 +209,26 @@
 
   <section class="hero rise" style="animation-delay:.08s">
     <div class="usage-card">
-      <div class="usage-label">DISK USAGE</div>
-      <div class="usage-value" id="usageUsed">—</div>
-      <div class="usage-pct" id="usagePct">—</div>
-      <div class="usage-bar"><div class="usage-bar-fill" id="usageBar"></div></div>
-      <div class="usage-meta" id="usageMeta">—</div>
+      <div class="gauge-label">DISK USAGE</div>
+      <div class="gauge">
+        <svg viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="gGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#7db4f9"/>
+              <stop offset="1" stop-color="#4a7dbd"/>
+            </linearGradient>
+          </defs>
+          <circle class="g-track" cx="100" cy="100" r="84"/>
+          <circle class="g-prog" id="gProg" cx="100" cy="100" r="84"
+                  stroke-dasharray="527.8" stroke-dashoffset="527.8"
+                  transform="rotate(-90 100 100)"/>
+        </svg>
+        <div class="gauge-center">
+          <div class="gauge-value" id="gaugePct">—</div>
+          <div class="gauge-sub" id="gaugeSub">—</div>
+        </div>
+      </div>
+      <div class="gauge-foot" id="gaugeFoot">—</div>
     </div>
 
     <div class="hero-right">
@@ -243,16 +258,18 @@
           <div class="s">retention 48</div>
         </div>
       </div>
+    </div>
+  </section>
 
-      <div class="chart-panel rise" style="animation-delay:.5s">
-        <div class="panel-head">
-          <span>CAPACITY TIMELINE</span>
-          <span class="hint" id="rangeHint">TOTAL BYTES</span>
-        </div>
-        <div class="chart" id="chartWrap">
-          <svg id="chart"></svg>
-          <div class="chart-tip" id="tip"></div>
-        </div>
+  <section class="rise" style="animation-delay:.5s">
+    <div class="panel">
+      <div class="panel-head">
+        <span>CAPACITY TIMELINE</span>
+        <span class="hint" id="rangeHint">TOTAL BYTES</span>
+      </div>
+      <div class="chart" id="chartWrap">
+        <svg id="chart"></svg>
+        <div class="chart-tip" id="tip"></div>
       </div>
     </div>
   </section>
@@ -348,28 +365,32 @@ async function loadStatus() {
   countUp($("snaps"), s.history, v => fmtInt(Math.round(v)));
   $("scanned").textContent = "last scan " + fmtTime(s.scannedAt);
   $("skips").textContent = "skipped " + fmtInt(s.skips);
-  fillUsage(s.disks || []);
+  drawGauge(s.disks || []);
   return s;
 }
 
-/* usage card + disk cards: real disk occupancy (df semantics) */
-function fillUsage(disks) {
-  const el = $("usageUsed"), bar = $("usageBar"), pct = $("usagePct"), meta = $("usageMeta");
+/* gauge ring + disk cards: real disk occupancy (df semantics) */
+function drawGauge(disks) {
+  const C = 527.8;
+  const prog = $("gProg");
+  const pctEl = $("gaugePct");
+  const sub = $("gaugeSub");
+  const foot = $("gaugeFoot");
   if (!disks.length) {
-    el.textContent = "—";
-    bar.style.width = "0%";
-    pct.textContent = "—";
-    meta.textContent = "no disk data";
+    prog.style.strokeDashoffset = String(C);
+    pctEl.textContent = "—";
+    sub.textContent = "no disk data";
+    foot.textContent = "";
     countUp($("diskTotal"), 0, v => fmtB(v));
     countUp($("diskFree"), 0, v => fmtB(v));
     return;
   }
   const d = disks[0];
   const frac = d.total > 0 ? d.used / d.total : 0;
-  countUp(el, d.used, v => fmtB(v));
-  bar.style.width = (frac * 100).toFixed(2) + "%";
-  pct.textContent = (frac * 100).toFixed(1) + "%";
-  meta.textContent = "of " + fmtB(d.total) + " · " + fmtB(d.free) + " free";
+  prog.style.strokeDashoffset = String(C * (1 - Math.min(1, frac)));
+  countUp(pctEl, frac * 100, v => v.toFixed(1) + "%");
+  sub.textContent = fmtB(d.used) + " of " + fmtB(d.total);
+  foot.textContent = fmtB(d.free) + " free";
   countUp($("diskTotal"), d.total, v => fmtB(v));
   countUp($("diskFree"), d.free, v => fmtB(v));
 }
