@@ -8,7 +8,8 @@ LDFLAGS := -s -w -X otsn/internal/app.Version=$(VERSION)
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BIN) .
 
-install: build
+install:
+	@test -f bin/$(BIN) || (echo "run 'make build' first" && exit 1)
 	install -m 755 bin/$(BIN) $(PREFIX)/bin/$(BIN)
 
 test:
