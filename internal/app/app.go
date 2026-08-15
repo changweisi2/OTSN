@@ -20,7 +20,7 @@ import (
 
 // Version is the otsn release version, overridable at build time with
 // -ldflags "-X otsn/internal/app.Version=...".
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // defaultKeep is how many snapshots the store retains automatically.
 const defaultKeep = 48
