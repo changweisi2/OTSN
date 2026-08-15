@@ -2,21 +2,17 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
-	"otsn/internal/events"
 	"otsn/internal/snapshot"
 	"otsn/internal/store"
 	"otsn/internal/ui"
@@ -116,7 +112,7 @@ func openStore() (*store.Store, error) {
 
 // scanOnce scans, archives, and prunes. Prune failures only warn: they
 // are common transient conditions (disk full, permissions) and must not
-// take down a long-running watch loop.
+// take down a long-running scan pipeline.
 func scanOnce(st *store.Store, roots, exclude []string) (*snapshot.Snapshot, error) {
 	snap, err := snapshot.Scan(roots, exclude, ui.Progress)
 	ui.Done() // clear the progress line on success and failure alike
@@ -294,139 +290,6 @@ func sameRoots(a, b *snapshot.Snapshot) bool {
 func diffErr(a, b *snapshot.Snapshot) error {
 	return fmt.Errorf("snapshots cover different roots (%s vs %s) — diff would be meaningless; run 'otsn list' and pick a matching pair with --since",
 		strings.Join(a.Roots, ","), strings.Join(b.Roots, ","))
-}
-
-// ---- watch ---------------------------------------------------------------
-
-// Watch implements 'otsn watch'.
-func Watch(args []string) error {
-	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
-	interval := fs.Duration("interval", 10*time.Minute, "scan interval")
-	alertMB := fs.Int64("alert", 0, "highlight growth of at least this many MB per scan")
-	useEvents := fs.Bool("events", true, "scan early when filesystem events occur")
-	jsonOut := fs.Bool("json", false, "emit one JSON object per scan (JSONL)")
-	excl := fs.String("exclude", defaultExclude, "comma-separated path prefixes to skip")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: otsn watch [flags] [paths...]\n\nkeep scanning periodically and print growth as it happens\n")
-	}
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	roots, err := parseRoots(fs.Args())
-	if err != nil {
-		return err
-	}
-	exclude := cleanExclude(*excl)
-	st, err := openStore()
-	if err != nil {
-		return err
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	var trig *events.Trigger
-	if *useEvents {
-		if t, err := events.New(roots); err == nil {
-			trig = t
-		} else {
-			ui.Warnf("event watching unavailable (%v); falling back to periodic scans only", err)
-		}
-	}
-	if trig != nil {
-		defer trig.Close()
-	}
-
-	note := ""
-	if trig != nil {
-		note = " · event-triggered"
-	}
-	fmt.Printf("%s watching %s · every %s%s\n",
-		ui.Title("otsn"), ui.Abbrev(strings.Join(roots, ", ")), *interval, note)
-
-	minGap := *interval / 5
-	if minGap > 30*time.Second {
-		minGap = 30 * time.Second
-	}
-	if minGap < time.Second {
-		minGap = time.Second
-	}
-
-	var trigC <-chan struct{}
-	if trig != nil {
-		trigC = trig.C()
-	}
-	var (
-		last     *snapshot.Snapshot
-		lastScan time.Time
-	)
-	tick := time.NewTicker(*interval)
-	defer tick.Stop()
-	for {
-		snap, err := scanOnce(st, roots, exclude)
-		if err != nil {
-			return err
-		}
-		lastScan = time.Now()
-		if last != nil {
-			reportDelta(snap, last, *alertMB, *jsonOut)
-		}
-		last = snap
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-		case <-trigC:
-			if time.Since(lastScan) < minGap {
-				continue
-			}
-		}
-	}
-}
-
-func reportDelta(snap, prev *snapshot.Snapshot, alertMB int64, jsonOut bool) {
-	changes := snapshot.Diff(prev, snap)
-	sum := snapshot.Summarize(changes)
-	if jsonOut {
-		var top []string
-		for _, g := range snapshot.Aggregate(changes, 3) {
-			if len(top) == 3 {
-				break
-			}
-			top = append(top, g.Path)
-		}
-		_ = printJSON(map[string]any{
-			"time":           snap.Time.Format(time.RFC3339),
-			"delta_bytes":    sum.Delta,
-			"files_added":    sum.Added,
-			"files_removed":  sum.Removed,
-			"files_modified": sum.Changed,
-			"top":            top,
-		})
-		return
-	}
-	ts := ui.Dim(snap.Time.Format("15:04:05"))
-	if sum.Delta == 0 {
-		fmt.Printf("%s %s unchanged\n", ts, ui.Dim("Δ"))
-		return
-	}
-	alert := alertMB > 0 && sum.Delta >= alertMB<<20
-	mark := ui.Cyan("Δ")
-	if alert {
-		mark = ui.Red("▲")
-	}
-	var top string
-	if groups := snapshot.Aggregate(changes, 3); len(groups) > 0 {
-		g := groups[0]
-		top = fmt.Sprintf("  top: %s (%s)", ui.Abbrev(g.Path), signDelta(g.Delta()))
-	}
-	line := fmt.Sprintf("%s %s %s  ·  %s files changed%s",
-		ts, mark, signDelta(sum.Delta),
-		ui.FmtInt(int64(sum.Added+sum.Removed+sum.Changed)), top)
-	if alert {
-		line += ui.Red(fmt.Sprintf("  ▲ growth ≥ %s", ui.FmtBytes(alertMB<<20)))
-	}
-	fmt.Println(line)
 }
 
 // ---- report ---------------------------------------------------------------

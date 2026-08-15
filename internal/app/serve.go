@@ -12,12 +12,10 @@ import (
 	"os/signal"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"otsn/internal/events"
 	"otsn/internal/snapshot"
 	"otsn/internal/store"
 	"otsn/internal/ui"
@@ -26,26 +24,19 @@ import (
 //go:embed web/index.html
 var webFS embed.FS
 
-// Serve implements 'otsn serve': a local web dashboard backed by a
-// background scan loop. The latest snapshot is kept in memory so API
-// responses never decode snapshot files.
+// Serve implements 'otsn serve': a read-only web dashboard over the
+// stored snapshots. It never scans; run 'otsn scan' to add data. The
+// latest snapshot is kept in memory so API responses never decode
+// snapshot files.
 func Serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8787", "listen address")
-	interval := fs.Duration("interval", 10*time.Minute, "scan interval")
-	useEvents := fs.Bool("events", true, "scan early when filesystem events occur")
-	excl := fs.String("exclude", defaultExclude, "comma-separated path prefixes to skip")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: otsn serve [flags] [paths...]\n\nserve a local web dashboard of disk usage\n")
+		fmt.Fprintf(fs.Output(), "usage: otsn serve [flags]\n\nserve the web dashboard over stored snapshots (run 'otsn scan' to add data)\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	roots, err := parseRoots(fs.Args())
-	if err != nil {
-		return err
-	}
-	exclude := cleanExclude(*excl)
 	st, err := openStore()
 	if err != nil {
 		return err
@@ -66,12 +57,6 @@ func Serve(args []string) error {
 	if s, err := st.Latest(); err == nil {
 		last = s
 	}
-	record := func(prev, snap *snapshot.Snapshot) {
-		if err := appendHistory(st, prev, snap); err != nil {
-			ui.Warnf("history: %v", err)
-		}
-	}
-	go scanLoop(ctx, st, roots, exclude, *interval, *useEvents, &mu, &last, record)
 
 	mux := serveMux(st, func() *snapshot.Snapshot {
 		mu.Lock()
@@ -83,67 +68,13 @@ func Serve(args []string) error {
 		<-ctx.Done()
 		srv.Shutdown(context.Background())
 	}()
-	fmt.Printf("%s dashboard at %s · watching %s · every %s\n",
-		ui.Title("otsn"), ui.Hi("http://"+*addr), strings.Join(roots, ", "), *interval)
+	fmt.Printf("%s dashboard at %s · serving stored snapshots (run 'otsn scan' to add data)\n",
+		ui.Title("otsn"), ui.Hi("http://"+*addr))
 	err = srv.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
-}
-
-// scanLoop scans immediately, then on every tick or filesystem event
-// (rate-limited), keeping last up to date and recording history.
-func scanLoop(ctx context.Context, st *store.Store, roots, exclude []string,
-	interval time.Duration, useEvents bool, mu *sync.Mutex, last **snapshot.Snapshot,
-	record func(prev, snap *snapshot.Snapshot)) {
-	tick := time.NewTicker(interval)
-	defer tick.Stop()
-	var trigC <-chan struct{}
-	if useEvents {
-		if t, err := events.New(roots); err == nil {
-			defer t.Close()
-			trigC = t.C()
-		} else {
-			ui.Warnf("event watching unavailable (%v); periodic scans only", err)
-		}
-	}
-	minGap := interval / 5
-	if minGap > 30*time.Second {
-		minGap = 30 * time.Second
-	}
-	if minGap < time.Second {
-		minGap = time.Second
-	}
-	var lastScan time.Time
-	for {
-		snap, err := scanOnce(st, roots, exclude)
-		if err != nil {
-			ui.Warnf("scan failed: %v", err)
-		} else {
-			mu.Lock()
-			prev := *last
-			*last = snap
-			mu.Unlock()
-			record(prev, snap)
-			if prev != nil {
-				sum := snapshot.Summarize(snapshot.Diff(prev, snap))
-				fmt.Printf("%s %s %s  ·  %s files changed\n",
-					ui.Dim(snap.Time.Format("15:04:05")), ui.Cyan("Δ"), signDelta(sum.Delta),
-					ui.FmtInt(int64(sum.Added+sum.Removed+sum.Changed)))
-			}
-		}
-		lastScan = time.Now()
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		case <-trigC:
-			if time.Since(lastScan) < minGap {
-				continue
-			}
-		}
-	}
 }
 
 func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux {

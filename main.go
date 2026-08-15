@@ -24,8 +24,6 @@ func run(args []string) error {
 	switch args[0] {
 	case "scan":
 		return app.Scan(args[1:])
-	case "watch":
-		return app.Watch(args[1:])
 	case "report":
 		return app.Report(args[1:])
 	case "top":
@@ -48,14 +46,13 @@ func run(args []string) error {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `otsn — disk usage watcher
+	fmt.Fprint(w, `otsn — disk usage tracker
 
 usage:
   otsn <command> [flags] [paths...]
 
 commands:
   scan      scan paths and store a snapshot (default: whole disk)
-  watch     keep scanning periodically; print growth as it happens
   report    diff two snapshots: where and when space grew
   top       largest directories in the latest snapshot
   list      show stored snapshots
