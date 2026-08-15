@@ -75,6 +75,31 @@ func TestPrune(t *testing.T) {
 	}
 }
 
+// A negative keep used to cause an index out of range panic.
+func TestPruneNegativeKeep(t *testing.T) {
+	st := openTestStore(t)
+	for i := 0; i < 3; i++ {
+		s := snapshot.New(nil, time.Now().Add(time.Duration(i)*time.Minute))
+		if err := st.Save(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := st.Prune(-5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(removed), 3; got != want {
+		t.Fatalf("removed = %d, want %d (negative keep removes all)", got, want)
+	}
+	snaps, err := st.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("remaining = %d, want 0", len(snaps))
+	}
+}
+
 func TestSaveAtomicNoTempLeftover(t *testing.T) {
 	st := openTestStore(t)
 	if err := st.Save(snapshot.New(nil, time.Now())); err != nil {

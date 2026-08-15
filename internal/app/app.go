@@ -114,18 +114,20 @@ func openStore() (*store.Store, error) {
 	return st, nil
 }
 
-// scanOnce scans, archives, and prunes.
+// scanOnce scans, archives, and prunes. Prune failures only warn: they
+// are common transient conditions (disk full, permissions) and must not
+// take down a long-running watch loop.
 func scanOnce(st *store.Store, roots, exclude []string) (*snapshot.Snapshot, error) {
 	snap, err := snapshot.Scan(roots, exclude, ui.Progress)
+	ui.Done() // clear the progress line on success and failure alike
 	if err != nil {
 		return nil, err
 	}
-	ui.Done()
 	if err := st.Save(snap); err != nil {
 		return nil, err
 	}
 	if _, err := st.Prune(defaultKeep); err != nil {
-		return nil, err
+		ui.Warnf("prune: %v", err)
 	}
 	return snap, nil
 }
@@ -758,9 +760,8 @@ func List(args []string) error {
 		out := make([]map[string]any, 0, len(snaps))
 		rootsByTime := historyRoots(st)
 		for i, s := range snaps {
-			fi, _ := os.Stat(s.Path)
 			out = append(out, map[string]any{
-				"index": i + 1, "time": s.Time.Format(time.RFC3339), "bytes": fi.Size(),
+				"index": i + 1, "time": s.Time.Format(time.RFC3339), "bytes": snapSize(s.Path),
 				"roots": rootsByTime[s.Time.UnixNano()],
 			})
 		}
@@ -775,22 +776,35 @@ func List(args []string) error {
 	rootsByTime := historyRoots(st)
 	rows := make([][]string, 0, len(snaps))
 	for i, s := range snaps {
-		fi, _ := os.Stat(s.Path)
 		roots := rootsByTime[s.Time.UnixNano()]
 		label := "—"
 		if len(roots) > 0 {
 			label = clip(ui.Abbrev(strings.Join(roots, " ")), 40)
 		}
+		size := "—"
+		if n := snapSize(s.Path); n >= 0 {
+			size = ui.FmtBytes(n)
+		}
 		rows = append(rows, []string{
 			strconv.Itoa(i + 1),
 			s.Time.Local().Format("2006-01-02 15:04:05"),
-			ui.FmtBytes(fi.Size()),
+			size,
 			label,
 		})
 	}
 	fmt.Print(ui.Table([]string{"idx", "time", "size", "roots"}, rows, map[int]bool{0: true, 2: true}))
 	fmt.Printf("  %s\n", ui.Dim(fmt.Sprintf("archive: %s", st.Dir())))
 	return nil
+}
+
+// snapSize returns the on-disk size of a snapshot file, or -1 if it is
+// no longer accessible (e.g. deleted between listing and stat).
+func snapSize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return -1
+	}
+	return fi.Size()
 }
 
 // historyRoots maps snapshot times to the roots recorded for them, so

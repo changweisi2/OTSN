@@ -118,8 +118,12 @@ func (s *Store) Load(snap Snap) (*snapshot.Snapshot, error) {
 }
 
 // Prune removes the oldest snapshots, keeping the most recent keep.
-// It returns the paths removed.
+// A negative keep is treated as 0 (remove everything). It returns the
+// paths removed.
 func (s *Store) Prune(keep int) ([]string, error) {
+	if keep < 0 {
+		keep = 0
+	}
 	snaps, err := s.List()
 	if err != nil {
 		return nil, err

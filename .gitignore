@@ -2,3 +2,5 @@
 /dist/
 /.gocache/
 *.snap.gz
+
+/docs

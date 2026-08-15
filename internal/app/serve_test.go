@@ -194,3 +194,49 @@ func TestBackfillHistory(t *testing.T) {
 		t.Fatalf("history = %d entries after second backfill, want 1", len(hist))
 	}
 }
+
+// /api/history must not return duplicate points when the extra-cache is
+// warm but a concurrent backfill has since added the same snapshot to
+// history.jsonl.
+func TestHistoryNoDuplicates(t *testing.T) {
+	t.Setenv("OTSN_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := snapshot.New([]string{t.TempDir()}, time.Now())
+	if err := st.Save(snap); err != nil {
+		t.Fatal(err)
+	}
+	h := httptest.NewServer(serveMux(st, func() *snapshot.Snapshot { return snap }))
+	defer h.Close()
+
+	// First request: no history entry, snapshot served via extra cache.
+	var first struct {
+		History []store.HistoryEntry `json:"history"`
+	}
+	getJSON(t, h, "/api/history", &first)
+	if len(first.History) != 1 {
+		t.Fatalf("first history = %d entries, want 1", len(first.History))
+	}
+
+	// Backfill now writes the same snapshot into history.jsonl, while
+	// the extra cache is still warm.
+	if err := appendHistory(st, nil, snap); err != nil {
+		t.Fatal(err)
+	}
+	var second struct {
+		History []store.HistoryEntry `json:"history"`
+	}
+	getJSON(t, h, "/api/history", &second)
+	if len(second.History) != 1 {
+		t.Fatalf("second history = %d entries, want 1 (no duplicates)", len(second.History))
+	}
+}
+
+// snapSize returns -1 when the file is missing instead of crashing.
+func TestSnapSizeMissing(t *testing.T) {
+	if got := snapSize("/definitely/not/here.snap.gz"); got != -1 {
+		t.Errorf("snapSize = %d, want -1", got)
+	}
+}

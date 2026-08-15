@@ -220,18 +220,30 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 		extraHist []store.HistoryEntry
 	)
 	loadExtra := func(hist []store.HistoryEntry) ([]store.HistoryEntry, error) {
+		// Snapshots whose timestamps are already in hist are never
+		// returned, so concurrent history backfill cannot duplicate
+		// timeline points even with a warm cache.
+		have := make(map[int64]bool, len(hist))
+		for _, e := range hist {
+			have[e.Time.UnixNano()] = true
+		}
+		filter := func(in []store.HistoryEntry) []store.HistoryEntry {
+			out := make([]store.HistoryEntry, 0, len(in))
+			for _, e := range in {
+				if !have[e.Time.UnixNano()] {
+					out = append(out, e)
+				}
+			}
+			return out
+		}
 		extraMu.Lock()
 		defer extraMu.Unlock()
 		if time.Since(extraAt) < time.Minute && extraHist != nil {
-			return extraHist, nil
+			return filter(extraHist), nil
 		}
 		snaps, err := st.List()
 		if err != nil {
 			return nil, err
-		}
-		have := make(map[int64]bool, len(hist))
-		for _, e := range hist {
-			have[e.Time.UnixNano()] = true
 		}
 		out := make([]store.HistoryEntry, 0, len(snaps))
 		for _, s := range snaps {

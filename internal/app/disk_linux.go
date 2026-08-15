@@ -21,26 +21,60 @@ func diskUsage(path string) (total, used int64, err error) {
 	seen := make(map[string]bool)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 3 {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 3 {
 			continue
 		}
-		dev, mnt, fstype := f[0], f[1], f[2]
+		// /proc/self/mounts escapes spaces and tabs in paths as \040,
+		// \011, ... — reverse the escapes before using the paths.
+		dev, mnt, fstype := unescapeMount(fields[0]), unescapeMount(fields[1]), unescapeMount(fields[2])
 		if !diskFSTypes[fstype] || seen[dev] {
 			continue
 		}
 		seen[dev] = true
-		t, u, err := statfs(mnt)
-		if err != nil {
+		t, u, statErr := statfs(mnt)
+		if statErr != nil {
 			continue
 		}
 		total += t
 		used += u
 	}
+	if err := sc.Err(); err != nil {
+		return statfs(path) // incomplete mount list; fall back
+	}
 	if total == 0 {
 		return statfs(path)
 	}
 	return total, used, nil
+}
+
+// unescapeMount reverses the octal escapes used in /proc/self/mounts.
+func unescapeMount(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) {
+			n, ok := 0, true
+			for j := 0; j < 3; j++ {
+				c := s[i+1+j]
+				if c < '0' || c > '7' {
+					ok = false
+					break
+				}
+				n = n*8 + int(c-'0')
+			}
+			if ok {
+				b.WriteByte(byte(n))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 func statfs(path string) (total, used int64, err error) {
