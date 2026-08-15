@@ -430,7 +430,7 @@ function buildChartData(hist) {
   for (const e of hist) {
     const v = useDisk ? e.disk_used : e.total;
     if (v == null) continue;
-    pts.push({time: e.time, v: v, used: e.disk_used, total: e.disk_total, delta: e.delta});
+    pts.push({time: e.time, v: v, used: e.disk_used, total: e.disk_total, delta: e.delta, approx: e.disk_approx});
   }
   return pts;
 }
@@ -497,8 +497,9 @@ function chartHover(ev) {
   showCross(cx);
   if (chartMode === "disk" && e.used != null) {
     const pct = e.total > 0 ? (100 * e.used / e.total).toFixed(1) : "—";
+    const approx = e.approx ? ' <span class="t">· approx</span>' : '';
     tip.innerHTML = '<div class="t">' + fmtTime(e.time) + '</div>' +
-      '<div class="tv">' + fmtB(e.used) + ' used</div>' +
+      '<div class="tv">' + fmtB(e.used) + ' used' + approx + '</div>' +
       '<div class="td">of ' + fmtB(e.total) + ' · ' + pct + '%</div>';
   } else {
     tip.innerHTML = '<div class="t">' + fmtTime(e.time) + '</div>' +

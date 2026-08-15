@@ -240,3 +240,40 @@ func TestSnapSizeMissing(t *testing.T) {
 		t.Errorf("snapSize = %d, want -1", got)
 	}
 }
+
+// Old history rows without disk fields must be approx-filled so the
+// timeline shows every snapshot, with the estimate flagged.
+func TestHistoryApproxFill(t *testing.T) {
+	t.Setenv("OTSN_DIR", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := store.HistoryEntry{Time: time.Now().Add(-time.Hour), Total: 10}
+	if err := st.AppendHistory(old); err != nil {
+		t.Fatal(err)
+	}
+	snap := snapshot.New([]string{t.TempDir()}, time.Now())
+	if err := st.Save(snap); err != nil {
+		t.Fatal(err)
+	}
+	h := httptest.NewServer(serveMux(st, func() *snapshot.Snapshot { return snap }))
+	defer h.Close()
+
+	var resp struct {
+		History []store.HistoryEntry `json:"history"`
+	}
+	getJSON(t, h, "/api/history", &resp)
+	if len(resp.History) != 2 {
+		t.Fatalf("history = %d entries, want 2", len(resp.History))
+	}
+	for _, e := range resp.History {
+		if e.Total == 10 { // the pre-disk row
+			if e.DiskTotal == 0 || e.DiskUsed <= 0 || !e.DiskApprox {
+				t.Errorf("old row not approx-filled: %+v", e)
+			}
+			return
+		}
+	}
+	t.Fatal("pre-disk row missing from response")
+}

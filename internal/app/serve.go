@@ -259,6 +259,7 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 				if total, used, err := diskUsage(snap.Roots[0]); err == nil {
 					e.DiskTotal = total
 					e.DiskUsed = used
+					e.DiskApprox = true // current statfs standing in for history
 				}
 			}
 			out = append(out, e)
@@ -272,6 +273,20 @@ func serveMux(st *store.Store, getLast func() *snapshot.Snapshot) *http.ServeMux
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		// History rows from before disk tracking existed have no disk
+		// fields; fill them with the current values, flagged approx, so
+		// the timeline still shows every snapshot.
+		if last := getLast(); last != nil && len(last.Roots) > 0 {
+			if total, used, err := diskUsage(last.Roots[0]); err == nil {
+				for i := range hist {
+					if hist[i].DiskTotal == 0 {
+						hist[i].DiskTotal = total
+						hist[i].DiskUsed = used
+						hist[i].DiskApprox = true
+					}
+				}
+			}
 		}
 		extra, err := loadExtra(hist)
 		if err != nil {
